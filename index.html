@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>TEMPO: Learning Temporal Context for Dynamic Robot Manipulation</title>
+  <meta name="description" content="TEMPO augments a pretrained VLA with two compact temporal signals, a motion representation and a proprioceptive history, to act reliably in dynamic settings.">
+  <meta name="keywords" content="TEMPO, VLA, Vision-Language-Action, Dynamic Manipulation, Temporal Representation, Robot Learning">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta property="og:title" content="TEMPO: Learning Temporal Context for Dynamic Robot Manipulation">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="TEMPO">
+  <meta property="og:image" content="static/images/teaser.png" />
+  <meta property="og:description" content="A single-frame VLA cannot perceive how a scene is moving. TEMPO adds two compact temporal signals to a frozen backbone and closes the gap on dynamic manipulation tasks." />
+
+  <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro" rel="stylesheet">
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+  <link rel="stylesheet" href="./static/css/index.css">
+
+  <!-- ===== State-Aliasing Explorer styles ===== -->
+  <style>
+    .ax-wrap{max-width:900px;margin:0 auto;}
+    .ax-tasks{display:flex;justify-content:center;gap:8px;margin:0 0 10px;}
+    .ax-task{border:1.5px solid #cfcfcf;background:#fff;color:#555;font-weight:700;
+             padding:5px 16px;border-radius:18px;cursor:pointer;font-size:.85rem;transition:all .15s;}
+    .ax-task:hover{border-color:#999;}
+    .ax-task.active{background:#1a1a1a;color:#fff;border-color:#1a1a1a;}
+    .ax-sub{text-align:center;color:#666;font-size:.95rem;margin:0 0 18px;}
+    .ax-twins{display:flex;align-items:stretch;gap:10px;}
+    .ax-card{flex:1 1 0;min-width:0;}
+    .ax-frame{position:relative;border-radius:8px;overflow:hidden;background:#000;
+              aspect-ratio:4/3;box-shadow:0 1px 4px rgba(0,0,0,.18);}
+    .ax-frame img,.ax-frame video{width:100%;height:100%;object-fit:cover;display:block;}
+    .ax-frame.approach{outline:3px solid #2E8B57;}
+    .ax-frame.retract{outline:3px solid #C0392B;}
+    .ax-frame.hold{outline:3px solid #b9b9b9;}
+    .ax-tag{position:absolute;left:8px;top:8px;font-size:.72rem;font-weight:700;color:#fff;
+            padding:2px 8px;border-radius:11px;letter-spacing:.02em;z-index:2;}
+    .ax-tag.approach{background:#2E8B57;} .ax-tag.retract{background:#C0392B;} .ax-tag.hold{background:#9a9a9a;}
+    .ax-meta{font-size:.78rem;color:#888;margin-top:4px;}
+    .ax-vs{flex:0 0 130px;display:flex;flex-direction:column;align-items:center;
+           justify-content:center;text-align:center;padding-top:6%;}
+    .ax-vs .approx{font-size:2.2rem;color:#9a9a9a;line-height:1;}
+    .ax-vs .sim{font-size:1.7rem;font-weight:800;color:#1a1a1a;line-height:1.1;}
+    .ax-vs .sim-lbl{font-size:.7rem;font-weight:600;color:#888;letter-spacing:.03em;margin-top:2px;}
+    .ax-vs .ax-playbtn{width:46px;height:46px;border-radius:50%;border:none;background:#2E8B57;color:#fff;
+            font-size:1.05rem;cursor:pointer;display:flex;align-items:center;justify-content:center;
+            margin:14px auto 0;padding-left:2px;box-shadow:0 2px 6px rgba(0,0,0,.22);transition:background .15s,transform .08s;}
+    .ax-vs .ax-playbtn:hover{background:#256e49;}
+    .ax-vs .ax-playbtn:active{transform:scale(.93);}
+    .ax-vs .ax-playbtn.playing{background:#C0392B;padding-left:0;}
+    .ax-vs .ax-playlbl{font-size:.66rem;color:#999;margin-top:5px;letter-spacing:.02em;}
+    .ax-proof{margin-top:18px;}
+    #axCurve{width:100%;height:auto;display:block;
+             background:#fafafa;border:1px solid #ececec;border-radius:8px;}
+    .ax-axistitle{font-size:15px;fill:#333;font-weight:600;}
+    .ax-tick{font-size:12px;fill:#888;}
+    .ax-caption{font-size:.9rem;color:#444;line-height:1.5;margin-top:14px;}
+    .ax-caption b.g{color:#2E8B57;} .ax-caption b.r{color:#C0392B;}
+    @media (max-width:620px){
+      .ax-twins{flex-wrap:wrap;}
+      .ax-card{flex:1 1 100%;}
+      .ax-vs{flex:1 1 100%;order:3;padding-top:6px;flex-direction:row;gap:14px;}
+      .ax-vs .perp{margin:0;}
+      .ax-axistitle{font-size:18px;}
+      .ax-tick{font-size:16px;}
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ==================== SIDEBAR NAV ==================== -->
+  <nav class="sidebar-nav" id="sidebar-nav">
+    <div class="sidebar-title">Sections</div>
+    <ul>
+      <li><a href="#abstract" data-target="abstract">Abstract</a></li>
+      <li><a href="#tasks" data-target="tasks">Tasks</a></li>
+      <li><a href="#method" data-target="method">Methodology</a></li>
+      <li><a href="#rollouts" data-target="rollouts">Results</a></li>
+      <li class="nav-group">
+        <a href="#analysis" data-target="analysis">Analysis</a>
+        <ul class="nav-sub">
+          <li><a href="#signal-attention" data-target="signal-attention">Signal Attention</a></li>
+          <li><a href="#velocity-probe" data-target="velocity-probe">Velocity Probe</a></li>
+          <li><a href="#state-aliasing" data-target="state-aliasing">State Aliasing</a></li>
+        </ul>
+      </li>
+    </ul>
+  </nav>
+
+  <!-- ==================== HERO / TITLE ==================== -->
+  <section class="hero">
+    <div class="hero-body">
+      <div class="container is-max-desktop">
+        <div class="columns is-centered">
+          <div class="column has-text-centered">
+            <h1 class="title is-1 publication-title">TEMPO: Learning Temporal Context for Dynamic Robot Manipulation</h1>
+            <div class="is-size-5 publication-authors">
+              <span class="author-block">Anonymous Author(s)</span>
+            </div>
+            <div class="is-size-5 publication-venue">
+              <span class="author-block">Under review</span>
+            </div>
+
+            <div class="column has-text-centered">
+              <div class="publication-links">
+                <span class="link-block">
+                  <span class="button is-normal is-rounded is-dark" style="opacity:.65;cursor:default;">
+                    <span>Paper, code and data links withheld for anonymous review</span>
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ==================== TEASER ==================== -->
+  <section class="hero teaser" style="padding: 0;">
+    <div class="container is-max-desktop">
+      <div class="hero-body" style="padding-top: 0.5rem; padding-bottom: 0.5rem;">
+        <div class="has-text-centered">
+          <video autoplay muted loop playsinline controls poster="static/images/teaser_poster.jpg"
+                 style="max-width: 100%; display: block; margin: 0 auto; border-radius: 6px;">
+            <source src="static/videos/teaser.mp4" type="video/mp4">
+          </video>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== ABSTRACT ==================== -->
+  <section class="section" id="abstract">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">Abstract</h2>
+          <div class="content has-text-justified abstract-text">
+            <p>
+              Vision-language-action (VLA) models have achieved impressive performance in quasi-static
+              manipulation, but struggle in dynamic manipulation tasks because they operate on a single
+              observation at inference time. We identify two representational failures that underlie this
+              limitation. The first is <b>motion ambiguity</b>, where a single observation does not include
+              scene dynamics and therefore cannot anticipate the future state of moving objects. The second
+              is <b>state aliasing</b>, where visually similar observations from different points in a task
+              require different actions. We argue that these failures persist regardless of model scale and
+              inference latency, showing that the bottleneck is missing temporal context rather than model
+              capacity.
+            </p>
+            <p>
+              Based on this insight, we propose <b>TEMPO</b>, which augments a pretrained VLA with two
+              temporal inputs: a motion summary extracted from a frozen video foundation model to resolve
+              motion ambiguity and a compact proprioceptive history to resolve state aliasing. TEMPO requires
+              no modification to the backbone and adds minimal compute overhead at training or deployment.
+              Across four dynamic manipulation tasks, it improves Bottle Handover success from 44% to 74% and
+              is the only method that solves state aliasing. Probing and ablation studies confirm that each
+              temporal signal independently addresses its corresponding failure. We further release
+              <b>TEMPO-Bench</b>, a benchmark of over 50k annotated frames for evaluating motion-aware robot
+              perception in both regression and multiple-choice formats.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== TASKS ==================== -->
+  <section class="section" id="tasks">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column is-full-width">
+          <h2 class="title is-3">Dynamic Tasks &#128007; No Quasi-static-ness! &#128034;</h2>
+          <div class="content has-text-justified">
+            <p>
+              We evaluate on a bimanual platform across four dynamic tasks (Drop Catch, Bottle
+              Handover, Flick Catch, and Wine Pour), each with a moving target and sequential subtasks
+              that a single-frame observation cannot resolve. Every clip on this page is a rollout from
+              our trained TEMPO policy.
+            </p>
+          </div>
+          <div class="content has-text-centered">
+            <video autoplay muted loop playsinline controls
+                   style="max-width:100%; display:block; margin:0 auto; border-radius:6px;">
+              <source src="static/videos/task_setup_v3.mp4" type="video/mp4">
+            </video>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== METHODOLOGY ==================== -->
+  <section class="section" id="method">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column is-full-width">
+          <h2 class="title is-3">TEMPO Methodology</h2>
+
+          <div class="content has-text-justified method-figure">
+            <video autoplay muted playsinline controls poster="static/images/method.png"
+                   style="width:100%; border-radius:4px; display:block;">
+              <source src="static/videos/method_v5.mp4" type="video/mp4">
+            </video>
+          </div>
+
+          <div class="content has-text-justified">
+            <p>
+              TEMPO adds two compact temporal signals to a frozen VLA, each fixing one failure mode with
+              near-zero overhead and no architectural change.
+              <span class="sig-mot"><b>TEMPO<sub>MOT</sub></b></span> is an object-agnostic motion token from
+              a frozen video foundation model that summarizes how the scene is moving, fixing motion
+              ambiguity. <span class="sig-act"><b>TEMPO<sub>ACT</sub></b></span> is a compact summary of the
+              robot's recent joint history that tells the policy which task phase it is in, fixing state
+              aliasing. Motion encoding runs in a background thread, so it adds essentially no inference-time
+              cost; we give the full architecture and a latency breakdown in the paper.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== RESULTS (demos) ==================== -->
+  <section class="section" id="rollouts">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column is-full-width">
+          <h2 class="title is-3">Results</h2>
+          <div class="content has-text-justified">
+            <p>
+              Side-by-side rollouts of the same task: the asynchronous method
+              <a href="https://github.com/mit-han-lab/vlash" target="_blank" rel="noopener">VLASH</a>
+              versus TEMPO. VLASH cannot tell how the scene is moving or which phase of the task it
+              is in, so it mistimes the grasp or stalls entirely. TEMPO tracks the moving target and commits
+              at the right moment.
+            </p>
+          </div>
+
+          <!-- Bottle Handover -->
+          <div class="video-compare has-fmbar columns is-centered">
+            <div class="column">
+              <div class="vid-label-wrap"><span class="vid-label vid-label-baseline">VLASH: Complete Miss</span></div>
+              <div class="video-wrap">
+                <video autoplay muted loop playsinline controls width="100%">
+                  <source src="static/videos/bottle_baseline.mp4" type="video/mp4">
+                </video>
+              </div>
+              <div class="vid-success base">Success rate: <b>38%</b></div>
+            </div>
+            <div class="column is-narrow fmbar-vcol">
+              <div class="fmbar-vlabel">VLASH</div>
+              <div class="fmbar-vtrack">
+                <div class="fmbar-seg" style="height:38%;background:#6FB07F" data-mode="Success" data-desc="Task completed: the bottle is caught.">19</div>
+                <div class="fmbar-seg light" style="height:10%;background:#FCBBA1" data-mode="Near Catch" data-desc="The side of the gripper grazes the bottle.">5</div>
+                <div class="fmbar-seg" style="height:16%;background:#EF3B2C" data-mode="Gripper Miss" data-desc="The gripper closes too early or too late.">8</div>
+                <div class="fmbar-seg" style="height:36%;background:#A50F15" data-mode="Complete Miss" data-desc="Robot gripper completely misses the object.">18</div>
+              </div>
+            </div>
+            <div class="column">
+              <div class="vid-label-wrap"><span class="vid-label vid-label-ours">TEMPO (Ours): Catches</span></div>
+              <div class="video-wrap">
+                <video autoplay muted loop playsinline controls width="100%">
+                  <source src="static/videos/bottle_ours.mp4" type="video/mp4">
+                </video>
+              </div>
+              <div class="vid-success ours">Success rate: <b>74%</b></div>
+            </div>
+            <div class="column is-narrow fmbar-vcol ours">
+              <div class="fmbar-vlabel">TEMPO</div>
+              <div class="fmbar-vtrack">
+                <div class="fmbar-seg" style="height:74%;background:#6FB07F" data-mode="Success" data-desc="Task completed: the bottle is caught.">37</div>
+                <div class="fmbar-seg" style="height:6%;background:#EF3B2C" data-mode="Gripper Miss" data-desc="The gripper closes too early or too late.">3</div>
+                <div class="fmbar-seg" style="height:20%;background:#A50F15" data-mode="Complete Miss" data-desc="Robot gripper completely misses the object.">10</div>
+              </div>
+            </div>
+          </div>
+          <div class="fmbar-legend">
+            <span class="key"><i style="background:#6FB07F"></i>Success</span>
+            <span class="key"><i style="background:#FCBBA1"></i>Near Catch</span>
+            <span class="key"><i style="background:#EF3B2C"></i>Gripper Miss</span>
+            <span class="key"><i style="background:#A50F15"></i>Complete Miss</span>
+          </div>
+          <p class="compare-caption">
+            Receiving a bottle from a walking person. VLASH reaches for where the bottle was and
+            misses it entirely; TEMPO estimates the bottle's velocity and times the grasp to intercept it.
+            The bars beside each video break that method's 50 Bottle Handover rollouts into success (green)
+            and failure modes (reds); <span class="on-hover">hover</span><span class="on-touch">tap</span> any segment for details.
+          </p>
+
+          <br>
+
+          <!-- Ball Drop -->
+          <div class="video-compare has-fmbar columns is-centered">
+            <div class="column">
+              <div class="vid-label-wrap"><span class="vid-label vid-label-baseline">VLASH: Misses the Catch</span></div>
+              <div class="video-wrap">
+                <video autoplay muted loop playsinline controls width="100%">
+                  <source src="static/videos/drop_baseline.mp4" type="video/mp4">
+                </video>
+              </div>
+              <div class="vid-success base">Success rate: <b>38%</b></div>
+            </div>
+            <div class="column is-narrow fmbar-vcol">
+              <div class="fmbar-vlabel">VLASH</div>
+              <div class="fmbar-vtrack">
+                <div class="fmbar-seg" style="height:38%;background:#6FB07F" data-mode="Success" data-desc="Task completed: the ball is caught.">19</div>
+                <div class="fmbar-seg light" style="height:4%;background:#FCBBA1" data-mode="Lagged behind hand" data-desc="The gripper reacts but lags behind and misses the ball.">2</div>
+                <div class="fmbar-seg" style="height:12%;background:#EF3B2C" data-mode="Overshoot" data-desc="The gripper overshoots the ball.">6</div>
+                <div class="fmbar-seg" style="height:46%;background:#A50F15" data-mode="Premature move (before hand)" data-desc="The robot moves before the human releases the ball.">23</div>
+              </div>
+            </div>
+            <div class="column">
+              <div class="vid-label-wrap"><span class="vid-label vid-label-ours">TEMPO (Ours): Catches</span></div>
+              <div class="video-wrap">
+                <video autoplay muted loop playsinline controls width="100%">
+                  <source src="static/videos/drop_ours.mp4" type="video/mp4">
+                </video>
+              </div>
+              <div class="vid-success ours">Success rate: <b>66%</b></div>
+            </div>
+            <div class="column is-narrow fmbar-vcol ours">
+              <div class="fmbar-vlabel">TEMPO</div>
+              <div class="fmbar-vtrack">
+                <div class="fmbar-seg" style="height:66%;background:#6FB07F" data-mode="Success" data-desc="Task completed: the ball is caught.">33</div>
+                <div class="fmbar-seg light" style="height:8%;background:#FCBBA1" data-mode="Lagged behind hand" data-desc="The gripper reacts but lags behind and misses the ball.">4</div>
+                <div class="fmbar-seg" style="height:14%;background:#EF3B2C" data-mode="Overshoot" data-desc="The gripper overshoots the ball.">7</div>
+                <div class="fmbar-seg" style="height:12%;background:#A50F15" data-mode="Premature move (before hand)" data-desc="The robot moves before the human releases the ball.">6</div>
+              </div>
+            </div>
+          </div>
+          <div class="fmbar-legend">
+            <span class="key"><i style="background:#6FB07F"></i>Success</span>
+            <span class="key"><i style="background:#FCBBA1"></i>Lagged behind hand</span>
+            <span class="key"><i style="background:#EF3B2C"></i>Overshoot</span>
+            <span class="key"><i style="background:#A50F15"></i>Premature move</span>
+          </div>
+          <p class="compare-caption">
+            A ball is dropped into the workspace and the gripper has to be under it to make the
+            catch. Because VLASH cannot perceive how the ball is moving, it falls back on constantly
+            sweeping the gripper left and right even when the ball is still or barely drifting, so it
+            is rarely in the right place when the ball comes down; TEMPO reads the recent motion and
+            closely shadows the hand, staying under the ball through the drop. The bars beside each
+            video break that method's 50 Drop Catch rollouts into success (green) and failure modes
+            (reds); <span class="on-hover">hover</span><span class="on-touch">tap</span> any segment for details.
+          </p>
+
+          <br>
+
+          <!-- Flick Catch -->
+          <div class="video-compare has-fmbar columns is-centered">
+            <div class="column">
+              <div class="vid-label-wrap"><span class="vid-label vid-label-baseline">VLASH: Fails to Track</span></div>
+              <div class="video-wrap">
+                <video autoplay muted loop playsinline controls width="100%">
+                  <source src="static/videos/track_baseline.mp4" type="video/mp4">
+                </video>
+              </div>
+              <div class="vid-success base">Success rate: <b>20%</b></div>
+            </div>
+            <div class="column is-narrow fmbar-vcol">
+              <div class="fmbar-vlabel">VLASH</div>
+              <div class="fmbar-vtrack">
+                <div class="fmbar-seg" style="height:20%;background:#6FB07F" data-mode="Success" data-desc="Task completed: plate grabbed, hand tracked, and ball caught.">10</div>
+                <div class="fmbar-seg light" style="height:6%;background:#FDD0A2" data-mode="Failed to Grab Plate" data-desc="Stage 1: robot fails to pick up the velcro plate.">3</div>
+                <div class="fmbar-seg" style="height:74%;background:#FB6A4A" data-mode="Failed to Track Hand" data-desc="Stage 2: robot fails to follow the human hand (no reaction or lagging behind).">37</div>
+              </div>
+            </div>
+            <div class="column">
+              <div class="vid-label-wrap"><span class="vid-label vid-label-ours">TEMPO (Ours): Tracks &amp; Catches</span></div>
+              <div class="video-wrap">
+                <video autoplay muted loop playsinline controls width="100%">
+                  <source src="static/videos/track_ours.mp4" type="video/mp4">
+                </video>
+              </div>
+              <div class="vid-success ours">Success rate: <b>66%</b></div>
+            </div>
+            <div class="column is-narrow fmbar-vcol ours">
+              <div class="fmbar-vlabel">TEMPO</div>
+              <div class="fmbar-vtrack">
+                <div class="fmbar-seg" style="height:66%;background:#6FB07F" data-mode="Success" data-desc="Task completed: plate grabbed, hand tracked, and ball caught.">33</div>
+                <div class="fmbar-seg light" style="height:8%;background:#FDD0A2" data-mode="Failed to Grab Plate" data-desc="Stage 1: robot fails to pick up the velcro plate.">4</div>
+                <div class="fmbar-seg" style="height:18%;background:#FB6A4A" data-mode="Failed to Track Hand" data-desc="Stage 2: robot fails to follow the human hand (no reaction or lagging behind).">9</div>
+                <div class="fmbar-seg" style="height:8%;background:#A50F15" data-mode="Failed to Catch Ball" data-desc="Stage 3: robot fails to catch the flicked ball (mistracks, moves early, or overshoots).">4</div>
+              </div>
+            </div>
+          </div>
+          <div class="fmbar-legend">
+            <span class="key"><i style="background:#6FB07F"></i>Success</span>
+            <span class="key"><i style="background:#FDD0A2"></i>Failed to Grab Plate</span>
+            <span class="key"><i style="background:#FB6A4A"></i>Failed to Track Hand</span>
+            <span class="key"><i style="background:#A50F15"></i>Failed to Catch Ball</span>
+          </div>
+          <p class="compare-caption">
+            VLASH never picks up the object's motion, so its gripper fails to follow the ball and the
+            catch is missed. TEMPO learns the object-motion-to-action correspondence, tracks the appropriate
+            target, and catches it on time. The bars beside each video break that method's 50 Flick Catch
+            rollouts into success (green) and per-stage failures (reds); <span class="on-hover">hover</span><span class="on-touch">tap</span> any segment for details.
+          </p>
+
+          <br>
+
+          <!-- Wine Pour -->
+          <div class="video-compare columns is-centered is-vcentered">
+            <div class="column">
+              <div class="vid-label-wrap"><span class="vid-label vid-label-baseline">VLASH: Spills More</span></div>
+              <div class="video-wrap">
+                <video autoplay muted loop playsinline controls width="100%">
+                  <source src="static/videos/pour_vlash.mp4" type="video/mp4">
+                </video>
+              </div>
+              <div class="vid-success base">Wine retained: <b>94.0%</b></div>
+            </div>
+            <div class="column">
+              <div class="vid-label-wrap"><span class="vid-label vid-label-ours">TEMPO (Ours): Clean Pour</span></div>
+              <div class="video-wrap">
+                <video autoplay muted loop playsinline controls width="100%">
+                  <source src="static/videos/pour_tempo.mp4" type="video/mp4">
+                </video>
+              </div>
+              <div class="vid-success ours">Wine retained: <b>98.1%</b></div>
+            </div>
+          </div>
+          <p class="compare-caption">
+            The robot pours beads into a pot the human keeps moving; success is the percentage of beads
+            retained in the pot. Both methods complete the pour, but VLASH lags the moving pot and spills
+            more, while TEMPO tracks the pot and pours cleanly.
+          </p>
+
+          <br>
+
+          <!-- State Aliasing (Flick Catch) -->
+          <h3 class="title is-4">State Aliasing: Stalls vs. Completes</h3>
+          <div class="video-compare columns is-centered">
+            <div class="column">
+              <div class="vid-label-wrap"><span class="vid-label vid-label-baseline">VLASH: Aliased, Fails to Start</span></div>
+              <div class="video-wrap">
+                <video autoplay muted loop playsinline controls width="100%">
+                  <source src="static/videos/alias_baseline.mp4" type="video/mp4">
+                </video>
+              </div>
+              <div class="vid-success base">Success rate: <b>0%</b></div>
+            </div>
+            <div class="column">
+              <div class="vid-label-wrap"><span class="vid-label vid-label-ours">TEMPO (Ours): Disambiguates, Succeeds</span></div>
+              <div class="video-wrap">
+                <video autoplay muted loop playsinline controls width="100%">
+                  <source src="static/videos/alias_ours.mp4" type="video/mp4">
+                </video>
+              </div>
+              <div class="vid-success ours">Success rate: <b>68%</b></div>
+            </div>
+          </div>
+          <p class="compare-caption">
+            The approach and retract phases of the gripper look nearly identical from a single frame. With
+            this state aliasing present in the demonstrations, VLASH collapses and cannot act; TEMPO's
+            proprioceptive history disambiguates the two phases, so the gripper approaches and retracts
+            normally and completes the task. See a deeper dive in
+            <a href="#state-aliasing">Why TEMPO<sub>ACT</sub> helps?</a> below.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+
+  <!-- ==================== ANALYSIS ==================== -->
+  <section class="section" id="analysis">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column is-full-width">
+          <h3 class="title is-4" id="signal-attention">TEMPO can complementarily use motion and proprioceptive information</h3>
+          <div class="content has-text-centered">
+            <video autoplay muted loop playsinline controls preload="auto"
+                   aria-label="Attention mass over an episode"
+                   class="attn-video" style="max-width: 85%; display: block; margin: 0 auto; border-radius: 4px;">
+              <source src="static/videos/spartan_trimmed_ep5_v3.mp4" type="video/mp4">
+            </video>
+            <p class="has-text-justified">
+              We visualize the action expert's attention mass over a representative Flick Catch episode.
+              Attention on <span class="sig-mot">TEMPO<sub>MOT</sub></span> rises as the human hand starts
+              moving, corresponding to major movement in the observation, while
+              <span class="sig-act">TEMPO<sub>ACT</sub></span> steadily gains attention during the hand-
+              following phase and drops back down after the ball is caught. The two signals are consulted at
+              distinct moments: motion during tracking, proprioceptive history at commitment; the paper
+              develops this attention analysis in full.
+            </p>
+          </div>
+
+          <br>
+
+          <h3 class="title is-4" id="velocity-probe">Why <span class="sig-mot">TEMPO<sub>MOT</sub></span> helps?<br>
+            <span style="font-weight:400;font-size:0.8em;color:#555;">Its motion latent encodes object velocity that a single frame cannot reveal.</span></h3>
+          <div class="content has-text-justified">
+            <p>
+              For each task we trace the active object's trajectory over the past 16 frames
+              (<span style="color:#5078ff;"><b>blue</b></span> = 16 frames ago &rarr;
+              <span style="color:#e63a3a;"><b>red</b></span> = now;
+              <span style="color:#caa400;"><b>yellow dot</b></span> = current position). A probe then predicts
+              this motion from each model's aggregated hidden state; a higher R² means the representation
+              encodes object motion.
+            </p>
+          </div>
+          <div class="content has-text-centered">
+            <img src="static/images/gt_trajectory16_v2.png" alt="Ground-truth 16-frame active-object trajectory per task" style="max-width:100%;border-radius:6px;" />
+          </div>
+          <div class="content">
+            <table class="results-table" style="max-width:700px;margin:0 auto;">
+              <thead>
+                <tr><th>Method</th><th>Drop Catch</th><th>Bottle Handover</th><th>Flick Catch</th><th>Wine Pour</th><th>Avg.</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>RTC</td><td>0.31</td><td>0.46</td><td>-0.07</td><td>0.06</td><td>0.19</td></tr>
+                <tr><td>VLASH</td><td>0.28</td><td>0.43</td><td>0.03</td><td>0.09</td><td>0.21</td></tr>
+                <tr class="ours-row"><td><b>TEMPO (Ours)</b></td><td><b>0.33</b></td><td><b>0.52</b></td><td><b>0.57</b></td><td><b>0.44</b></td><td><b>0.47</b></td></tr>
+              </tbody>
+            </table>
+            <p class="compare-caption">
+              MLP probe R² over active object velocity. Where a single frame cannot reveal motion
+              (Flick Catch, Wine Pour), RTC and VLASH collapse toward zero while TEMPO stays high.
+            </p>
+          </div>
+
+          <br>
+
+          <h3 class="title is-4" id="state-aliasing">Why <span class="sig-act">TEMPO<sub>ACT</sub></span> helps? State Aliasing!</h3>
+          <div class="content has-text-justified">
+            <p>
+              Why does a single-frame policy stall before it even starts? Because the <i>same image</i> recurs at
+              opposite moments of the task. In the real episodes below, the arm passes through the same configuration
+              once on the way in and once on the way out: the two highlighted frames are near-identical (their visual
+              similarity, measured by a frozen vision encoder, is shown in the middle) yet demand opposite actions.
+              Use the toggle to switch task.
+            </p>
+          </div>
+
+          <!-- ===== Interactive State-Aliasing Explorer ===== -->
+          <div class="ax-wrap">
+            <div class="ax-tasks">
+              <button class="ax-task" id="axTask-spartan" data-task="spartan">Flick Catch</button>
+              <button class="ax-task" id="axTask-pour" data-task="pour">Wine Pour</button>
+            </div>
+            <div class="ax-twins" id="axTwins">
+              <div class="ax-card">
+                <div class="ax-frame" id="frameWrapA">
+                  <span class="ax-tag" id="tagA"></span>
+                  <video id="vidA" muted playsinline loop preload="auto"></video>
+                </div>
+                <div class="ax-meta" id="metaA"></div>
+              </div>
+              <div class="ax-vs">
+                <div class="approx">&asymp;</div>
+                <div class="sim"><span id="cosVal">--</span></div>
+                <div class="sim-lbl">DINOv2 cosine<br>similarity</div>
+                <button class="ax-playbtn" id="axPlayBtn" type="button" aria-label="Play next 5s">&#9654;</button>
+                <div class="ax-playlbl">play next 5s</div>
+              </div>
+              <div class="ax-card">
+                <div class="ax-frame" id="frameWrapB">
+                  <span class="ax-tag" id="tagB"></span>
+                  <video id="vidB" muted playsinline loop preload="auto"></video>
+                </div>
+                <div class="ax-meta" id="metaB"></div>
+              </div>
+            </div>
+            <div class="ax-proof">
+              <svg id="axCurve" viewBox="0 0 1000 280" preserveAspectRatio="none"></svg>
+            </div>
+          </div>
+
+          <br>
+
+          <h3 class="title is-4">Without proprioceptive history, VLASH oscillates and stalls.</h3>
+          <div class="content has-text-justified">
+            <p>
+              The approach and retract phases of the gripper produce nearly
+              identical observations, so VLASH, conditioned on a single frame, cannot tell them apart and oscillates
+              between reaching and withdrawing, failing to even start the task. This is the artifact that
+              drives both RTC and VLASH to 0% on the state-aliased Flick Catch and Wine Pour tasks. TEMPO
+              <b>completely resolves it</b>: with a compact proprioceptive history, the policy knows which
+              phase it is in and the gripper approaches and retracts normally, as shown in the
+              <a href="#rollouts">state-aliasing success rollout above</a>.
+            </p>
+          </div>
+          <div class="content has-text-centered">
+            <video autoplay muted loop playsinline controls
+                   style="max-width: 95%; display:block; margin:0 auto; border-radius:4px;">
+              <source src="static/videos/state_alias.mp4" type="video/mp4">
+            </video>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tooltip for the interactive failure-mode chart -->
+  <div id="fmbar-tooltip" class="fmbar-tooltip"></div>
+
+  <!-- ==================== FOOTER ==================== -->
+  <footer class="footer">
+    <div class="container">
+      <div class="columns is-centered">
+        <div class="column is-8">
+          <div class="content">
+            <p>
+              Website template borrowed from <a href="https://github.com/nerfies/nerfies.github.io">NeRFies</a>
+              under a <a href="https://creativecommons.org/licenses/by-sa/4.0/">Creative Commons
+              Attribution-ShareAlike 4.0 International License</a>.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const navLinks = document.querySelectorAll('.sidebar-nav a');
+      const targets = Array.from(navLinks).map(link => {
+        const id = link.getAttribute('data-target');
+        return document.getElementById(id);
+      }).filter(el => el !== null);
+
+      // Document-relative top of an element (offsetTop is parent-relative)
+      function getDocTop(el) {
+        return el.getBoundingClientRect().top + window.pageYOffset;
+      }
+
+      function setActive(id) {
+        navLinks.forEach(link => {
+          link.classList.toggle('active', link.getAttribute('data-target') === id);
+        });
+      }
+
+      let clickLock = false;
+
+      function onScroll() {
+        if (clickLock) return;
+        const scrollPos = window.scrollY + window.innerHeight * 0.35;
+        let current = targets[0] ? targets[0].id : null;
+        for (const el of targets) {
+          if (getDocTop(el) <= scrollPos) {
+            current = el.id;
+          }
+        }
+        if (current) setActive(current);
+      }
+
+      window.addEventListener('scroll', onScroll, { passive: true });
+      onScroll();
+
+      navLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+          e.preventDefault();
+          const id = this.getAttribute('data-target');
+          const target = document.getElementById(id);
+          if (!target) return;
+          // Lock scroll-driven highlight while smooth scroll runs, then re-enable
+          clickLock = true;
+          setActive(id);
+          window.scrollTo({
+            top: getDocTop(target) - 20,
+            behavior: 'smooth'
+          });
+          setTimeout(() => { clickLock = false; }, 800);
+        });
+      });
+
+      // Interactive failure-mode bar chart: hover a segment -> tooltip
+      const fmTip = document.getElementById('fmbar-tooltip');
+      if (fmTip) {
+        document.querySelectorAll('.fmbar-seg').forEach(seg => {
+          seg.addEventListener('mouseenter', () => {
+            fmTip.innerHTML = '<b>' + seg.dataset.mode + '</b><br>' + seg.dataset.desc;
+            fmTip.style.opacity = '1';
+          });
+          seg.addEventListener('mousemove', e => {
+            fmTip.style.left = e.clientX + 'px';
+            fmTip.style.top = e.clientY + 'px';
+          });
+          seg.addEventListener('mouseleave', () => {
+            fmTip.style.opacity = '0';
+          });
+        });
+
+        // Touch screens have no hover: tap a segment to show its tooltip,
+        // tap elsewhere or scroll to hide it.
+        if (window.matchMedia('(hover: none)').matches) {
+          const hideTip = () => { fmTip.style.opacity = '0'; };
+          document.querySelectorAll('.fmbar-seg').forEach(seg => {
+            seg.addEventListener('click', e => {
+              e.stopPropagation();
+              fmTip.innerHTML = '<b>' + seg.dataset.mode + '</b><br>' + seg.dataset.desc;
+              const half = Math.min(120, fmTip.offsetWidth / 2) + 8;
+              fmTip.style.left = Math.max(half, Math.min(window.innerWidth - half, e.clientX)) + 'px';
+              fmTip.style.top = e.clientY + 'px';
+              fmTip.style.opacity = '1';
+            });
+          });
+          document.addEventListener('click', hideTip);
+          window.addEventListener('scroll', hideTip, { passive: true });
+        }
+      }
+    });
+  </script>
+
+  <!-- ===== State-Aliasing Explorer logic ===== -->
+  <script>
+  (function(){
+    const POS="#2E8B57", NEG="#C0392B", HOLD="#b9b9b9";
+    let D=null;
+    const $=id=>document.getElementById(id);
+    const svg=$("axCurve"); if(!svg) return;
+    const SVGNS="http://www.w3.org/2000/svg";
+    // Narrower drawing on phones so axis text is not scaled down to ~4px
+    let W=1000; const H=280,PX=60,PYt=16,PYb=52;
+    const fitWidth=()=>{ W = svg.clientWidth && svg.clientWidth<620 ? 560 : 1000;
+                         svg.setAttribute("viewBox","0 0 "+W+" "+H); };
+    fitWidth();
+    const xOf=i=>PX + (D.n<=1?0:i/(D.n-1))*(W-2*PX);
+    const yOf=a=>H-PYb - a*(H-PYt-PYb);
+    const el=(tag,attrs)=>{const e=document.createElementNS(SVGNS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e;};
+    const pClass=i=>D.dir[i]>0?"approach":D.dir[i]<0?"retract":"hold";
+    const pColor=i=>D.dir[i]>0?POS:D.dir[i]<0?NEG:HOLD;
+    const tagTxt=i=>D.dir[i]>0?(D.ui.pos.tag):D.dir[i]<0?(D.ui.neg.tag):(D.ui.mid||"");
+
+    function drawCard(card,i,clip){ // card: "A" or "B"
+      const v=$("vid"+card);
+      v.poster=D.base+D.frames[i];
+      if(v.getAttribute("src")!==clip){ v.setAttribute("src",clip); v.load(); }
+      $("frameWrap"+card).className="ax-frame "+pClass(i);
+      $("tag"+card).className="ax-tag "+pClass(i); $("tag"+card).textContent=tagTxt(i);
+      $("meta"+card).textContent="t = "+D.t[i].toFixed(1)+" s";
+    }
+
+    function buildCurve(A,B){
+      svg.innerHTML="";
+      const x0=PX, x1=W-PX, yb=yOf(0), yt=yOf(1);
+      // y gridlines + ticks (normalized 0..1)
+      for(const a of [0,0.5,1]){
+        const y=yOf(a);
+        svg.appendChild(el("line",{x1:x0,y1:y,x2:x1,y2:y,stroke:"#eee","stroke-width":1}));
+        svg.appendChild(el("line",{x1:x0-5,y1:y,x2:x0,y2:y,stroke:"#999","stroke-width":1}));
+        const t=el("text",{x:x0-9,y:y+4,class:"ax-tick","text-anchor":"end"});t.textContent=a.toFixed(1);svg.appendChild(t);
+      }
+      // x ticks (time, seconds)
+      const maxT=D.t[D.n-1]||1, step=maxT>24?6:(maxT>12?4:2);
+      for(let T=0;T<=maxT+1e-6;T+=step){
+        const x=x0+(T/maxT)*(x1-x0);
+        svg.appendChild(el("line",{x1:x,y1:yb,x2:x,y2:yb+5,stroke:"#999","stroke-width":1}));
+        const t=el("text",{x:x,y:yb+20,class:"ax-tick","text-anchor":"middle"});t.textContent=String(Math.round(T));svg.appendChild(t);
+      }
+      // axis lines
+      svg.appendChild(el("line",{x1:x0,y1:yt,x2:x0,y2:yb,stroke:"#444","stroke-width":1.5}));
+      svg.appendChild(el("line",{x1:x0,y1:yb,x2:x1,y2:yb,stroke:"#444","stroke-width":1.5}));
+      // axis titles
+      const ym=(yt+yb)/2;
+      const ya=el("text",{x:17,y:ym,class:"ax-axistitle",transform:`rotate(-90 17 ${ym})`,"text-anchor":"middle"});
+      ya.textContent="EEF distance from start";svg.appendChild(ya);
+      const xa=el("text",{x:(x0+x1)/2,y:H-8,class:"ax-axistitle","text-anchor":"middle"});xa.textContent="time (s)";svg.appendChild(xa);
+      // curve
+      svg.appendChild(el("polyline",{points:D.app.map((a,i)=>xOf(i)+","+yOf(a)).join(" "),fill:"none",stroke:"#cfcfcf","stroke-width":1.4}));
+      const NEUTRAL="#d8d8d8";  // bounded clusters: green = rising trend around the 1st point; red = drop around the 2nd point
+      const GBACK=20, GFWD=12, RBACK=12, RFWD=20;   // green leans into the rise before A (but continues past A); red runs through the drop after B
+      const gLo=A-GBACK, gHi=A+GFWD, rLo=B-RBACK, rHi=B+RFWD;
+      for(let i=0;i<D.n;i++){
+        const near = (i>=gLo && i<=gHi) ? POS : ((i>=rLo && i<=rHi) ? NEG : null);
+        svg.appendChild(el("circle",{cx:xOf(i),cy:yOf(D.app[i]),
+          r: near?4:2, fill: near||NEUTRAL, "fill-opacity": near?1:.45}));
+      }
+      // shared-EEF reference line through the two highlighted moments (connector removed)
+      const ymid=yOf((D.app[A]+D.app[B])/2);
+      svg.appendChild(el("line",{x1:x0,y1:ymid,x2:x1,y2:ymid,stroke:"#b0b0b0","stroke-width":1,"stroke-dasharray":"3 4"}));
+      svg.appendChild(el("circle",{cx:xOf(B),cy:yOf(D.app[B]),r:7,fill:NEG,stroke:"#000","stroke-width":1.5}));
+      svg.appendChild(el("circle",{cx:xOf(A),cy:yOf(D.app[A]),r:7.5,fill:POS,stroke:"#000","stroke-width":2}));
+    }
+
+    let playing=false;
+    function setPlaying(on){
+      playing=on;
+      for(const id of ["vidA","vidB"]){ const v=$(id);
+        if(on){ const p=v.play(); if(p&&p.catch)p.catch(()=>{}); } else { v.pause(); v.currentTime=0; } }
+      const btn=$("axPlayBtn");
+      btn.innerHTML = on ? "&#10073;&#10073;" : "&#9654;";
+      btn.classList.toggle("playing",on);
+      btn.setAttribute("aria-label", on?"Reset":"Play next 5s");
+    }
+
+    function loadTask(t){
+      setPlaying(false);
+      document.querySelectorAll('.ax-task').forEach(b=>b.classList.toggle('active',b.dataset.task===t));
+      fetch("static/data/alias_"+t+".json").then(r=>r.json()).then(d=>{
+        D=d; const [A,B]=D.showcase;
+        drawCard("A",A,D.clipA); drawCard("B",B,D.clipB);
+        $("cosVal").textContent=D.scCos.toFixed(2);
+        buildCurve(A,B);
+      }).catch(()=>{});
+    }
+    window.addEventListener("resize",()=>{ const w=W; fitWidth();
+      if(D && W!==w){ const [A,B]=D.showcase; buildCurve(A,B); } });
+    $("axPlayBtn").addEventListener("click",()=>setPlaying(!playing));
+    document.querySelectorAll('.ax-task').forEach(b=>b.addEventListener('click',()=>loadTask(b.dataset.task)));
+    loadTask("pour");
+  })();
+  </script>
+
+</body>
+
+</html>
